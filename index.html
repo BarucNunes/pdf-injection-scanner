@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Extração client-side de dados de PDFs para investigar prompt injection.">
+    <meta name="description" content="Análise local de PDFs para investigar prompt injection.">
     <title>PDF Injection Scanner</title>
     <link rel="stylesheet" href="styles.css">
   </head>
@@ -13,7 +13,7 @@
         <div class="brand-mark" aria-hidden="true">⌁</div>
         <p class="eyebrow">PDF INJECTION SCANNER</p>
         <h1 id="page-title">Encontre sinais ocultos em PDFs.</h1>
-        <p class="intro">Extraia o conteúdo e os metadados visuais do seu arquivo diretamente no navegador. Nenhum arquivo é enviado.</p>
+        <p class="intro">Analise conteúdo, estrutura e sinais visuais de possíveis instruções ocultas no seu PDF.</p>
 
         <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Selecionar arquivo PDF">
           <span class="upload-icon" aria-hidden="true">↑</span>
@@ -21,8 +21,32 @@
           <span>ou escolha um arquivo no seu dispositivo</span>
           <button id="file-button" class="button button-primary" type="button">Selecionar PDF</button>
           <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
+          <small class="file-hint">Apenas PDF · máximo de 20 MB</small>
         </div>
+
+        <section id="processing-panel" class="processing-panel" aria-labelledby="processing-title" hidden>
+          <div class="processing-heading">
+            <div>
+              <p class="eyebrow">PROCESSANDO LOCALMENTE</p>
+              <h2 id="processing-title">Analisando seu documento</h2>
+            </div>
+            <span id="progress-percent" class="progress-percent">0%</span>
+          </div>
+          <div id="progress-track" class="progress-track" role="progressbar" aria-label="Progresso da análise" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="progress-bar"></span>
+          </div>
+          <ol class="processing-steps">
+            <li data-step="extracting"><span>1</span>Extraindo texto</li>
+            <li data-step="detecting"><span>2</span>Rodando detectores</li>
+            <li data-step="reporting"><span>3</span>Gerando relatório</li>
+          </ol>
+        </section>
+
         <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+        <aside class="privacy-note" aria-label="Privacidade">
+          <span aria-hidden="true">✓</span>
+          <p><strong>Seu arquivo permanece no seu dispositivo.</strong> Todo o processamento acontece localmente neste navegador; o PDF não é enviado a nenhum servidor.</p>
+        </aside>
       </section>
 
       <section id="report-screen" class="screen report-screen" aria-labelledby="report-title" hidden>

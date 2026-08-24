@@ -13,10 +13,42 @@ const newFileButton = document.querySelector("#new-file-button");
 const uploadStatus = document.querySelector("#upload-status");
 const summary = document.querySelector("#document-summary");
 const pagesReport = document.querySelector("#pages-report");
+const processingPanel = document.querySelector("#processing-panel");
+const progressTrack = document.querySelector("#progress-track");
+const progressBar = document.querySelector("#progress-bar");
+const progressPercent = document.querySelector("#progress-percent");
+const processingSteps = document.querySelectorAll(".processing-steps li");
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+let isProcessing = false;
 
 function toRgbColor(red, green, blue) {
   const asByte = (value) => Math.round(Math.max(0, Math.min(1, value)) * 255);
   return [asByte(red), asByte(green), asByte(blue)];
+}
+
+function decodeUtf16Be(hex) {
+  const units = String(hex).match(/[\da-f]{4}/gi) || [];
+  return String.fromCharCode(...units.map((unit) => Number.parseInt(unit, 16)));
+}
+
+function isSuspiciousInvisible(character) {
+  const codePoint = character.codePointAt(0);
+  return [0x200B, 0x200C, 0x200D, 0xFEFF].includes(codePoint) ||
+    (codePoint >= 0xE0000 && codePoint <= 0xE007F) ||
+    [0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069].includes(codePoint);
+}
+
+// pdf.js normaliza alguns controles invisíveis ao extrair o texto. Preservamos
+// apenas esses controles dos mapas ToUnicode do próprio PDF para os detectores.
+function extractInvisibleUnicodeFromCmaps(data) {
+  const source = new TextDecoder("latin1").decode(data);
+  const cmaps = source.match(/begincmap[\s\S]*?endcmap/g) || [];
+  const mappedText = cmaps.flatMap((cmap) => Array.from(cmap.matchAll(/<[\da-f]+>\s*<([\da-f]{4,})>/gi), (match) => decodeUtf16Be(match[1])))
+    .join("");
+  return Array.from(mappedText)
+    .filter(isSuspiciousInvisible)
+    .join("");
 }
 
 async function extractVisualMetadata(page, viewport) {
@@ -52,7 +84,7 @@ async function extractVisualMetadata(page, viewport) {
  * @param {File} file
  * @returns {Promise<Array<{pageNumber: number, width: number, height: number, text: string, blocks: Array}>>}
  */
-export async function extractPdfData(file) {
+export async function extractPdfData(file, onProgress = () => {}) {
   if (!(file instanceof File) || file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     throw new Error("Selecione um arquivo PDF válido.");
   }
@@ -62,6 +94,7 @@ export async function extractPdfData(file) {
   const pages = [];
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    onProgress(pageNumber - 1, document.numPages);
     const page = await document.getPage(pageNumber);
     const viewport = page.getViewport({ scale: 1 });
     const [textContent, visualMetadata] = await Promise.all([page.getTextContent(), extractVisualMetadata(page, viewport)]);
@@ -90,7 +123,11 @@ export async function extractPdfData(file) {
       blocks,
       elements: visualMetadata.elements
     });
+    onProgress(pageNumber, document.numPages);
   }
+
+  const invisibleUnicode = extractInvisibleUnicodeFromCmaps(data);
+  if (invisibleUnicode && pages[0]) pages[0].text += invisibleUnicode;
 
   return pages;
 }
@@ -149,33 +186,96 @@ function renderRiskReport(file, pages, report) {
   `;
 }
 
-async function handleFile(file) {
-  uploadStatus.textContent = "Extraindo dados do PDF…";
-  fileButton.disabled = true;
+function setProgress(step, percent, message) {
+  processingPanel.hidden = false;
+  progressBar.style.width = `${percent}%`;
+  progressPercent.textContent = `${percent}%`;
+  progressTrack.setAttribute("aria-valuenow", String(percent));
+  uploadStatus.textContent = message;
+  const currentIndex = ["extracting", "detecting", "reporting"].indexOf(step);
+  processingSteps.forEach((item, index) => {
+    item.classList.toggle("is-active", index === currentIndex);
+    item.classList.toggle("is-complete", index < currentIndex);
+  });
+}
+
+function validateFile(file) {
+  if (!file) throw new Error("Escolha um arquivo para analisar.");
+  const hasPdfExtension = file.name.toLowerCase().endsWith(".pdf");
+  if (file.type !== "application/pdf" && !hasPdfExtension) {
+    throw new Error("Este arquivo não parece ser um PDF. Selecione um arquivo .pdf válido.");
+  }
+  if (file.size === 0) throw new Error("O arquivo PDF está vazio.");
+  if (file.size > MAX_FILE_SIZE) throw new Error("O arquivo excede o limite de 20 MB. Escolha um PDF menor.");
+}
+
+function friendlyExtractionError(error) {
+  const message = error instanceof Error ? error.message : "";
+  if (/password|encrypted/i.test(message)) return "Este PDF é protegido por senha e não pode ser analisado.";
+  if (/Invalid PDF|FormatError|UnexpectedResponseException/i.test(message)) return "Não foi possível abrir este arquivo como PDF. Verifique se ele está íntegro.";
+  return "Não foi possível extrair os dados deste PDF. Tente outro arquivo ou uma versão não corrompida.";
+}
+
+async function processFile(file) {
+  if (isProcessing) return;
   try {
-    const pages = await extractPdfData(file);
+    validateFile(file);
+  } catch (error) {
+    uploadStatus.textContent = error.message;
+    return;
+  }
+
+  isProcessing = true;
+  fileButton.disabled = true;
+  dropZone.classList.add("is-processing");
+  setProgress("extracting", 8, `Extraindo texto de ${file.name}…`);
+  try {
+    const pages = await extractPdfData(file, (completed, total) => {
+      const percent = total ? Math.round(8 + (completed / total) * 47) : 55;
+      setProgress("extracting", percent, `Extraindo texto — página ${completed} de ${total}`);
+    });
+    setProgress("detecting", 62, "Rodando detectores de conteúdo e estrutura…");
     const pdfBytes = await file.arrayBuffer();
     const report = await runAllDetectors({ pages, pdfBytes });
+    setProgress("reporting", 88, "Gerando relatório…");
     renderRiskReport(file, pages, report);
+    setProgress("reporting", 100, "Relatório concluído.");
+    await new Promise((resolve) => setTimeout(resolve, 180));
     uploadScreen.hidden = true;
     reportScreen.hidden = false;
   } catch (error) {
-    uploadStatus.textContent = error instanceof Error ? error.message : "Não foi possível ler o PDF.";
+    processingPanel.hidden = true;
+    uploadStatus.textContent = friendlyExtractionError(error);
   } finally {
+    isProcessing = false;
     fileButton.disabled = false;
+    dropZone.classList.remove("is-processing");
   }
 }
 
-fileButton.addEventListener("click", () => fileInput.click());
+async function handleFile(file) {
+  return processFile(file);
+}
+
+fileButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!isProcessing) fileInput.click();
+});
 fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) handleFile(fileInput.files[0]);
 });
 dropZone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") fileInput.click();
+  if ((event.key === "Enter" || event.key === " ") && !isProcessing) {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+dropZone.addEventListener("click", () => {
+  if (!isProcessing) fileInput.click();
 });
 ["dragenter", "dragover"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
   event.preventDefault();
-  dropZone.classList.add("is-dragging");
+  if (!isProcessing) dropZone.classList.add("is-dragging");
 }));
 ["dragleave", "drop"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
   event.preventDefault();
@@ -183,11 +283,19 @@ dropZone.addEventListener("keydown", (event) => {
 }));
 dropZone.addEventListener("drop", (event) => {
   const file = event.dataTransfer.files[0];
-  if (file) handleFile(file);
+  if (!isProcessing && file) handleFile(file);
 });
 newFileButton.addEventListener("click", () => {
   reportScreen.hidden = true;
   uploadScreen.hidden = false;
   fileInput.value = "";
   uploadStatus.textContent = "";
+});
+
+newFileButton.addEventListener("click", () => {
+  processingPanel.hidden = true;
+  progressBar.style.width = "0%";
+  progressPercent.textContent = "0%";
+  progressTrack.setAttribute("aria-valuenow", "0");
+  processingSteps.forEach((item) => item.classList.remove("is-active", "is-complete"));
 });
