@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "generate:fixtures": "node scripts/generate-visual-fixtures.mjs"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}
