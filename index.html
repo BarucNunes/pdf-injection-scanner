@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Extração client-side de dados de PDFs para investigar prompt injection.">
+    <title>PDF Injection Scanner</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="upload-screen" class="screen" aria-labelledby="page-title">
+        <div class="brand-mark" aria-hidden="true">⌁</div>
+        <p class="eyebrow">PDF INJECTION SCANNER</p>
+        <h1 id="page-title">Encontre sinais ocultos em PDFs.</h1>
+        <p class="intro">Extraia o conteúdo e os metadados visuais do seu arquivo diretamente no navegador. Nenhum arquivo é enviado.</p>
+
+        <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Selecionar arquivo PDF">
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <strong>Arraste um PDF para cá</strong>
+          <span>ou escolha um arquivo no seu dispositivo</span>
+          <button id="file-button" class="button button-primary" type="button">Selecionar PDF</button>
+          <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
+        </div>
+        <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section id="report-screen" class="screen report-screen" aria-labelledby="report-title" hidden>
+        <header class="report-header">
+          <div>
+            <p class="eyebrow">RELATÓRIO DE EXTRAÇÃO</p>
+            <h1 id="report-title">Dados do documento</h1>
+          </div>
+          <button id="new-file-button" class="button button-secondary" type="button">Analisar outro PDF</button>
+        </header>
+        <div id="document-summary" class="summary"></div>
+        <div id="pages-report" class="pages-report"></div>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
